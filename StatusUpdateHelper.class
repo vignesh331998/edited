@@ -1,0 +1,517 @@
+/* Decompiler 115ms, total 997ms, lines 512 */
+package com.pearson.api;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.CookieStore;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import org.apache.commons.codec.binary.Base64;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.XML;
+
+public class StatusUpdateHelper {
+   public boolean almSignIn(String uname, String pwd) {
+      boolean flag = false;
+
+      try {
+         CookieHandler.setDefault(new CookieManager((CookieStore)null, CookiePolicy.ACCEPT_ALL));
+         uname = uname.toLowerCase();
+         byte[] credBytes = (uname + ":" + pwd).getBytes();
+         new Base64();
+         String credEncodedString = "Basic " + Base64.encodeBase64String(credBytes);
+         URL checkLoginURL = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/test-instances?query={cycle-id[3085];test-id[7023]}");
+         HttpURLConnection checkLoginURLCon = (HttpURLConnection)checkLoginURL.openConnection();
+         checkLoginURLCon.setRequestMethod("GET");
+         checkLoginURLCon.setRequestProperty("Accept", "application/xml");
+         if (checkLoginURLCon.getResponseCode() != 200) {
+            System.out.println("ALM Singing in...");
+            String url = "https://qe-global-alm.pearson.com/qcbin/api/authentication/sign-in";
+            URL obj = new URL(url);
+            HttpURLConnection con = (HttpURLConnection)obj.openConnection();
+			con.setRequestProperty("X-XSRF-TOKEN", xsrfHeaderValue);
+            con.setRequestMethod("POST");
+            con.setRequestProperty("Authorization", credEncodedString);
+            int responseCode = con.getResponseCode();
+            System.out.println("Response" + responseCode);
+            if (responseCode == 200) {
+               flag = true;
+               System.out.println("SignIn Success");
+            } else {
+               System.out.println("SignIn Failed");
+            }
+         }
+      } catch (Exception var12) {
+         var12.printStackTrace();
+      }
+
+      return flag;
+   }
+
+   public int getTotalTestcases(String uname, String pwd, String testSetID) {
+      int count = 0;
+
+      try {
+         this.almSignIn(uname, pwd);
+         URL obj4 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/test-instances?query={cycle-id[" + testSetID + "]}");
+         HttpURLConnection con4 = (HttpURLConnection)obj4.openConnection();
+         con4.setRequestMethod("GET");
+         con4.setRequestProperty("Accept", "application/xml");
+         System.out.println(con4.getResponseCode());
+         String response4 = readInputStreamToString(con4);
+         JSONObject xmlJSONObj = XML.toJSONObject(response4);
+         String jsonPrettyPrintString = xmlJSONObj.toString(4);
+         JSONObject reponseJSON = new JSONObject(jsonPrettyPrintString);
+         String entities = reponseJSON.get("Entities").toString();
+         JSONObject entitiesJSON = new JSONObject(entities);
+         count = entitiesJSON.getInt("TotalResults");
+      } catch (Exception var13) {
+         var13.printStackTrace();
+      }
+
+      return count;
+   }
+
+   public boolean updateUsingTestsetAndTestcaseid(String uname, String pwd, String testSetID, String[] parts, String status) {
+      boolean flag = false;
+
+      try {
+         this.almSignIn(uname, pwd);
+
+         for(int i = 0; i < parts.length; ++i) {
+            System.out.println(parts[i]);
+            flag = almResultUpdate(testSetID, parts[i].trim(), status, uname);
+         }
+
+         if (flag) {
+            System.out.println("Results Updated in ALM");
+         }
+      } catch (Exception var8) {
+         var8.printStackTrace();
+      }
+
+      return flag;
+   }
+
+   public boolean updateUsingTestSetIdWithoutTestCase(String uname, String pwd, String testSetID, String[] testCaseIds, String status) {
+      boolean f = true;
+
+      try {
+         this.almSignIn(uname, pwd);
+         URL obj4 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/test-instances?query={cycle-id[" + testSetID + "]}&page-size=5000");
+         HttpURLConnection con4 = (HttpURLConnection)obj4.openConnection();
+         con4.setRequestMethod("GET");
+         con4.setRequestProperty("Accept", "application/xml");
+         String response4 = readInputStreamToString(con4);
+         JSONObject xmlJSONObj = XML.toJSONObject(response4);
+         String jsonPrettyPrintString = xmlJSONObj.toString(4);
+         List<Object> testIds = new ArrayList();
+         JSONObject reponseJSON = new JSONObject(jsonPrettyPrintString);
+         String entities = reponseJSON.get("Entities").toString();
+         JSONObject entitiesJSON = new JSONObject(entities);
+         JSONArray jsonarray = entitiesJSON.getJSONArray("Entity");
+
+         int i;
+         for(i = 0; i < jsonarray.length(); ++i) {
+            JSONObject entity = new JSONObject(jsonarray.get(i).toString());
+            JSONObject entityFields = entity.getJSONObject("Fields");
+            JSONArray entityField = entityFields.getJSONArray("Field");
+
+            for(int j = 0; j < entityField.length(); ++j) {
+               JSONObject field = new JSONObject(entityField.get(j).toString());
+               String name = field.getString("Name");
+               if ("test-id".equals(name)) {
+                  String value = field.get("Value").toString();
+                  System.out.println(value);
+                  testIds.add(value);
+               }
+            }
+         }
+
+         for(i = 0; i < testIds.size(); ++i) {
+            if (!Arrays.asList(testCaseIds).contains(testIds.get(i))) {
+               System.out.println(testIds.get(i));
+               boolean flag = almResultUpdate(testSetID, testIds.get(i).toString(), status, uname);
+               if (!flag) {
+                  f = false;
+               }
+            }
+         }
+
+         if (f) {
+            System.out.println("Results Updated on ALM");
+         }
+      } catch (Exception var25) {
+         var25.printStackTrace();
+      }
+
+      return f;
+   }
+
+   public boolean updateUsingTestSetId(String uname, String pwd, String testSetID, String status) {
+      boolean f = true;
+
+      try {
+         this.almSignIn(uname, pwd);
+         URL obj4 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/test-instances?query={cycle-id[" + testSetID + "]}&page-size=5000");
+         HttpURLConnection con4 = (HttpURLConnection)obj4.openConnection();
+         con4.setRequestMethod("GET");
+         con4.setRequestProperty("Accept", "application/xml");
+         String response4 = readInputStreamToString(con4);
+         System.out.println(response4);
+         List<Object> testIds = new ArrayList();
+         JSONObject xmlJSONObj = XML.toJSONObject(response4);
+         String jsonPrettyPrintString = xmlJSONObj.toString(4);
+         JSONObject reponseJSON = new JSONObject(jsonPrettyPrintString);
+         String entities = reponseJSON.get("Entities").toString();
+         JSONObject entitiesJSON = new JSONObject(entities);
+         JSONArray jsonarray = entitiesJSON.getJSONArray("Entity");
+         System.out.println("jsonarray length:" + jsonarray.length());
+
+         int i;
+         for(i = 0; i < jsonarray.length(); ++i) {
+            JSONObject entity = new JSONObject(jsonarray.get(i).toString());
+            JSONObject entityFields = entity.getJSONObject("Fields");
+            JSONArray entityField = entityFields.getJSONArray("Field");
+
+            for(int j = 0; j < entityField.length(); ++j) {
+               JSONObject field = new JSONObject(entityField.get(j).toString());
+               String name = field.getString("Name");
+               if ("test-id".equals(name)) {
+                  String value = field.get("Value").toString();
+                  testIds.add(value);
+               }
+            }
+         }
+
+         System.out.println("testIds.size: " + testIds.size());
+
+         for(i = 0; i < testIds.size(); ++i) {
+            System.out.println("i:" + testIds.get(i));
+            boolean flag = almResultUpdate(testSetID, testIds.get(i).toString(), status, uname);
+            if (!flag) {
+               f = false;
+            }
+         }
+
+         if (f) {
+            System.out.println("Results Updated on ALM");
+         }
+      } catch (Exception var24) {
+         var24.printStackTrace();
+      }
+
+      return f;
+   }
+
+   public static boolean almResultUpdate(String testSetID, String testID, String Status, String uname) {
+      boolean flag = false;
+
+      try {
+         URL object = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/test-instances?query={cycle-id[" + testSetID + "];test-id[" + testID + "]}");
+         System.out.println(object);
+         HttpURLConnection connection = (HttpURLConnection)object.openConnection();
+		 connection.setRequestProperty("X-XSRF-TOKEN", xsrfHeaderValue);
+         connection.setRequestMethod("PUT");
+         connection.addRequestProperty("Content-Type", "application/xml");
+         connection.addRequestProperty("Accept", "application/xml");
+         connection.setDoOutput(true);
+         String connectionrbody = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Entity Type=\"test-instance\"><Fields><Field Name=\"status\"><Value>" + Status + "</Value></Field></Fields></Entity>";
+         OutputStreamWriter write = new OutputStreamWriter(connection.getOutputStream());
+         write.write(connectionrbody);
+         write.flush();
+         write.close();
+         String response2 = readInputStreamToString(connection);
+         if (connection.getResponseCode() != 200) {
+            System.out.println("Could not update the result to ALM.");
+         } else {
+            System.out.println("Result updated in ALM.");
+            flag = true;
+         }
+
+         updatestep(testSetID, testID, Status);
+      } catch (Exception var10) {
+         var10.printStackTrace();
+      }
+
+      return flag;
+   }
+
+   public static void updatestep(String testSetID, String testID, String status) {
+      boolean flag = false;
+      ArrayList runID = new ArrayList();
+
+      try {
+         URL obj3 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/runs?query={cycle-id[" + testSetID + "];test-id[" + testID + "]}");
+         HttpURLConnection con3 = (HttpURLConnection)obj3.openConnection();
+         con3.setRequestMethod("GET");
+         con3.addRequestProperty("Content-Type", "application/xml");
+         con3.addRequestProperty("Accept", "application/xml");
+         String response3 = readInputStreamToString(con3);
+         JSONObject xmlJSONObj = XML.toJSONObject(response3);
+         String entities = xmlJSONObj.get("Entities").toString();
+         JSONObject entitiesJSON = new JSONObject(entities);
+         JSONObject entity2 = entitiesJSON.getJSONObject("Entity");
+         JSONObject entityFields2 = entity2.getJSONObject("Fields");
+         JSONArray entityField2 = entityFields2.getJSONArray("Field");
+
+         for(int j = 0; j < entityField2.length(); ++j) {
+            JSONObject field = new JSONObject(entityField2.get(j).toString());
+            String name = field.getString("Name");
+            if ("id".equals(name)) {
+               String value = field.get("Value").toString();
+               System.out.println(value);
+               runID.add(value);
+            }
+         }
+
+         List<Object> runstepsid = new ArrayList();
+         Iterator var41 = runID.iterator();
+
+         while(var41.hasNext()) {
+            Object runids = var41.next();
+            URL obj8 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/runs/" + runids + "/run-steps/");
+            HttpURLConnection con8 = (HttpURLConnection)obj8.openConnection();
+            con8.setRequestMethod("GET");
+            con8.setRequestProperty("Accept", "application/xml");
+            System.out.println(con8.getResponseCode());
+            String response8 = readInputStreamToString(con8);
+            System.out.println(response8);
+            int runstepvalue = Integer.parseInt(response8.substring(response8.indexOf("<Field Name=\"id\"><Value>") + 24, response8.indexOf("</Value></Field><Field Name=\"component-data\">")));
+            System.out.println("runstep:  " + runstepvalue);
+            String count = response8.substring(79, 84);
+            String[] no = count.split(">");
+            int number = Integer.parseInt(no[0].replace(no[0].substring(no[0].length() - 1), ""));
+            System.out.println("no of steps :" + number);
+            JSONObject xmlJSONObj1 = XML.toJSONObject(response8);
+            String jsonPrettyPrintString1 = xmlJSONObj1.toString(4);
+            JSONObject reponseJSON1 = new JSONObject(jsonPrettyPrintString1);
+            String entities1 = reponseJSON1.get("Entities").toString();
+            JSONObject entitiesJSON1 = new JSONObject(entities1);
+            if (entitiesJSON1.has("Entities")) {
+               System.out.println("True------***********************");
+            }
+
+            JSONObject entity;
+            String name;
+            if (number == 1) {
+               JSONObject entity1 = reponseJSON1.getJSONObject("Entities");
+               JSONObject entityF1 = entity1.getJSONObject("Entity");
+               entity = entityF1.getJSONObject("Fields");
+               JSONArray entityField1 = entity.getJSONArray("Field");
+
+               for(int j = 0; j < entityField1.length(); ++j) {
+                  JSONObject field1 = new JSONObject(entityField1.get(j).toString());
+                  String name1 = field1.getString("Name");
+                  if ("id".equals(name1)) {
+                     name = field1.get("Value").toString();
+                     System.out.println(name);
+                     runstepsid.add(name);
+                  }
+               }
+            } else if (number > 1) {
+               JSONArray jsonarray1 = entitiesJSON1.getJSONArray("Entity");
+               System.out.println("Run-Steps:  ");
+
+               for(int i = 0; i < jsonarray1.length(); ++i) {
+                  entity = new JSONObject(jsonarray1.get(i).toString());
+                  JSONObject entityFields = entity.getJSONObject("Fields");
+                  JSONArray entityField = entityFields.getJSONArray("Field");
+
+                  for(int j = 0; j < entityField.length(); ++j) {
+                     JSONObject field = new JSONObject(entityField.get(j).toString());
+                     name = field.getString("Name");
+                     if ("id".equals(name)) {
+                        String value = field.get("Value").toString();
+                        System.out.println(value);
+                        runstepsid.add(value);
+                     }
+                  }
+               }
+            }
+
+            Iterator var46 = runstepsid.iterator();
+
+            while(var46.hasNext()) {
+               Object runstep = var46.next();
+               System.out.println(runstep);
+               URL obj9 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/runs/" + runids + "/run-steps/" + runstep);
+               HttpURLConnection con9 = (HttpURLConnection)obj9.openConnection();
+               System.out.println(obj9);
+			   con9.setRequestProperty("X-XSRF-TOKEN", xsrfHeaderValue);
+               con9.setRequestMethod("PUT");
+               con9.addRequestProperty("Content-Type", "application/xml");
+               con9.addRequestProperty("Accept", "application/xml");
+               con9.setDoOutput(true);
+               String con9reqbody = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Entity Type=\"run-step\"><Fields><Field Name=\"status\"><Value>" + status + "</Value></Field></Fields></Entity>";
+               System.out.println("con9reqbody" + con9reqbody);
+               OutputStreamWriter wr8 = new OutputStreamWriter(con9.getOutputStream());
+               wr8.write(con9reqbody);
+               wr8.flush();
+               wr8.close();
+               int response10 = con9.getResponseCode();
+               if (response10 != 200) {
+                  System.out.println("Could not update the result to ALM.");
+               } else {
+                  System.out.println("Result updated in ALM.");
+                  flag = true;
+               }
+            }
+
+            runstepsid.clear();
+         }
+      } catch (Exception var38) {
+         var38.printStackTrace();
+      }
+
+   }
+
+   public static String getExactCookie(String ip) {
+      return ip.split(";")[0].split("=")[1];
+   }
+
+   static String readInputStreamToString(HttpURLConnection connection) {
+      String result = null;
+      StringBuffer sb = new StringBuffer();
+      BufferedInputStream is = null;
+
+      try {
+         is = new BufferedInputStream(connection.getInputStream());
+         BufferedReader br = new BufferedReader(new InputStreamReader(is));
+         String inputLine = "";
+
+         while((inputLine = br.readLine()) != null) {
+            sb.append(inputLine);
+         }
+
+         result = sb.toString();
+      } catch (Exception var16) {
+         result = null;
+         if (is != null) {
+            try {
+               is.close();
+            } catch (IOException var15) {
+            }
+         }
+      } finally {
+         if (is != null) {
+            try {
+               is.close();
+            } catch (IOException var14) {
+            }
+         }
+
+      }
+
+      return result;
+   }
+
+   public static JSONArray checkoutTC(String TCId) {
+      JSONArray fieldArray = null;
+
+      try {
+         URL obj3 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/tests/" + TCId);
+         HttpURLConnection con3 = (HttpURLConnection)obj3.openConnection();
+         con3.setRequestMethod("GET");
+         con3.setRequestProperty("Accept", "application/json");
+         String response3 = readInputStreamToString(con3);
+         JSONObject tcResponse = new JSONObject(response3);
+         fieldArray = tcResponse.getJSONArray("Fields");
+         URL obj1 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/tests/" + TCId + "/versions/check-out");
+         HttpURLConnection con1 = (HttpURLConnection)obj1.openConnection();
+         con1.setRequestMethod("POST");
+         int response1 = con1.getResponseCode();
+         if (response1 == 201) {
+            System.out.println("Checked Out Success");
+         } else {
+            System.out.println("Checked Out Failed");
+         }
+      } catch (Exception var9) {
+         var9.printStackTrace();
+      }
+
+      return fieldArray;
+   }
+
+   public static void checkinTC(String TCId) {
+      try {
+         URL obj2 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/tests/" + TCId + "/versions/check-in");
+         HttpURLConnection con2 = (HttpURLConnection)obj2.openConnection();
+		 con2.setRequestProperty("X-XSRF-TOKEN", xsrfHeaderValue);
+         con2.setRequestMethod("POST");
+         int response2 = con2.getResponseCode();
+         if (response2 == 201) {
+            System.out.println("Checked In Success");
+         } else {
+            System.out.println("Checked In Failed");
+         }
+      } catch (Exception var4) {
+         var4.printStackTrace();
+      }
+
+   }
+
+   public static void updateTC(String TCId, String key, String value, JSONArray fieldArray) {
+      try {
+         String opStr = null;
+
+         for(int i = 0; i < fieldArray.length(); ++i) {
+            JSONObject jo = (JSONObject)fieldArray.get(i);
+            if (jo.getString("Name").equalsIgnoreCase(key)) {
+               opStr = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Entity Type=\"test\"><ChildrenCount><Value>0</Value></ChildrenCount><Fields><Field Name=\"" + key + "\">" + formStr(value) + "</Field></Fields><RelatedEntities/></Entity>";
+               break;
+            }
+         }
+
+         URL obj4 = new URL("https://qe-global-alm.pearson.com/qcbin/rest/domains/PRODUCTION/projects/Product/tests/" + TCId);
+         HttpURLConnection con4 = (HttpURLConnection)obj4.openConnection();
+		 con4.setRequestProperty("X-XSRF-TOKEN", xsrfHeaderValue);
+         con4.setRequestMethod("PUT");
+         con4.setRequestProperty("Content-Type", "application/xml");
+         con4.setDoOutput(true);
+         OutputStreamWriter wr = new OutputStreamWriter(con4.getOutputStream());
+         wr.write(opStr);
+         wr.flush();
+         wr.close();
+         int response4 = con4.getResponseCode();
+         if (response4 == 200) {
+            System.out.println(TCId + ": Update Success");
+         } else {
+            System.out.println(TCId + ": Update Failed");
+         }
+      } catch (Exception var9) {
+         var9.printStackTrace();
+      }
+
+   }
+
+   public static String formStr(String inp) {
+      String retStr = "";
+      if (inp.indexOf(";") == -1) {
+         retStr = "<Value>" + inp + "</Value>";
+      } else {
+         inp.trim();
+         String[] splitArr = inp.split(";");
+         String[] var6 = splitArr;
+         int var5 = splitArr.length;
+
+         for(int var4 = 0; var4 < var5; ++var4) {
+            String s = var6[var4];
+            retStr = retStr + "<Value>" + s + "</Value>";
+         }
+      }
+
+      return retStr;
+   }
+}
